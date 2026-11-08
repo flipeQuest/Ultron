@@ -7,37 +7,55 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Ultron</title>
 <style>
-:root{--ice:#dfe7ee;--mute:#8d9aa6;--red:#ff3347;--deep:#a50f27;--glass:rgba(255,255,255,.07);--edge:rgba(255,255,255,.17);--blur:blur(26px) saturate(160%)}
-*{box-sizing:border-box}
+:root{--ice:#dfe7ee;--mute:#8d9aa6;--red:#ff3347;--glass:rgba(255,255,255,.07);--edge:rgba(255,255,255,.17);--blur:blur(26px) saturate(160%)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;margin:0}
-body{color:var(--ice);font:16px/1.5 "Avenir Next","Helvetica Neue",system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden;
+body{color:var(--ice);font:16px/1.5 "Avenir Next","Helvetica Neue",system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden;touch-action:manipulation;
 background:radial-gradient(60% 40% at 80% 8%,rgba(255,51,71,.22),transparent 70%),radial-gradient(70% 50% at 10% 90%,rgba(90,120,150,.28),transparent 70%),repeating-linear-gradient(100deg,#141b22 0 3px,#10161c 3px 7px);background-color:#0b1015}
 .glass{background:var(--glass);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border:1px solid var(--edge);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 8px 30px rgba(0,0,0,.35)}
 .eye{--s:28px;width:var(--s);height:var(--s);border-radius:50%;position:relative;flex:none;
 background:radial-gradient(circle,#fff 0 5%,#ff6a78 6% 15%,var(--red) 16% 32%,#6d0a1b 33% 50%,#12070a 51% 64%,#3b4752 65% 100%);
-box-shadow:0 0 calc(var(--s)*.4) rgba(255,51,71,.6),inset 0 0 calc(var(--s)*.12) #000;transition:box-shadow .3s}
+box-shadow:0 0 calc(var(--s)*.4) rgba(255,51,71,.6),inset 0 0 calc(var(--s)*.12) #000}
 .eye::after{content:"";position:absolute;inset:-14%;border-radius:50%;border:1px solid rgba(255,255,255,.2);border-top-color:rgba(255,51,71,.7)}
 .eye.busy{animation:think 1s ease-in-out infinite}
-@keyframes think{50%{box-shadow:0 0 calc(var(--s)*.9) rgba(255,51,71,.95),inset 0 0 calc(var(--s)*.12) #000;transform:scale(1.06)}}
-@keyframes wake{from{transform:scaleY(.05);opacity:0}}
+.eye.busy::after{animation:spin 1.6s linear infinite}
+.eye.speak{animation:speak .45s ease-in-out infinite}
 .eye.big{--s:112px;animation:wake .9s ease-out}
-@media (prefers-reduced-motion:reduce){.eye.busy,.eye.big{animation:none}}
-header{margin:calc(10px + env(safe-area-inset-top)) 12px 0;padding:10px 14px;border-radius:22px;display:flex;align-items:center;gap:12px}
+@keyframes think{50%{box-shadow:0 0 calc(var(--s)*.9) rgba(255,51,71,.95),inset 0 0 calc(var(--s)*.12) #000;transform:scale(1.06)}}
+@keyframes speak{50%{box-shadow:0 0 calc(var(--s)*.7) rgba(255,51,71,.8),inset 0 0 calc(var(--s)*.12) #000}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes wake{from{transform:scaleY(.05);opacity:0}}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}}
+@keyframes scan{to{transform:translateX(100%)}}
+@keyframes dot{0%,80%,100%{opacity:.2}40%{opacity:1}}
+@keyframes caret{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important}}
+header{margin:calc(10px + env(safe-area-inset-top)) 12px 0;padding:10px 14px;border-radius:22px;display:flex;align-items:center;gap:12px;flex:none}
 h1{margin:0;flex:1;font-size:19px;font-weight:500;letter-spacing:.16em}
 button{font:inherit;color:var(--ice);background:rgba(255,255,255,.08);border:1px solid var(--edge);border-radius:14px;padding:6px 13px;min-height:36px}
-button:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--red);outline-offset:2px}
-#settings{display:none;margin:10px 12px 0;padding:14px;border-radius:22px}
+button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+textarea:focus,input:focus{outline:none}
+#settings input:focus,#settings textarea:focus{border-color:var(--red)}
+form:focus-within{border-color:rgba(255,51,71,.5)}
+#settings{display:none;margin:10px 12px 0;padding:14px;border-radius:22px;flex:none}
 #settings.open{display:block}
 #settings label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
-#settings input,#settings textarea{width:100%;font:15px/1.4 inherit;font-family:inherit;color:var(--ice);background:rgba(0,0,0,.3);border:1px solid var(--edge);border-radius:12px;padding:9px}
+#settings input,#settings textarea{width:100%;font-family:inherit;font-size:16px;line-height:1.4;color:var(--ice);background:rgba(0,0,0,.3);border:1px solid var(--edge);border-radius:12px;padding:9px}
 #settings p{font-size:13px;color:var(--mute);margin:10px 0 0}
-#msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:14px}
+#msgs{flex:1;min-height:0;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:14px}
+.u,.a{animation:rise .28s ease-out}
 .u{align-self:flex-end;max-width:84%;padding:10px 15px;border-radius:20px 20px 6px 20px;white-space:pre-wrap;background:rgba(255,255,255,.14);border:1px solid var(--edge);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
-.a{align-self:flex-start;max-width:92%;padding:10px 15px;border-radius:20px 20px 20px 6px;white-space:pre-wrap;font:15px/1.6 ui-monospace,"SF Mono",Menlo,monospace;background:rgba(10,14,18,.55);border:1px solid var(--edge);border-left:2px solid var(--red);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+.a{align-self:flex-start;max-width:92%;padding:10px 15px;border-radius:20px 20px 20px 6px;white-space:pre-wrap;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:15px;line-height:1.6;background:rgba(10,14,18,.55);border:1px solid var(--edge);border-left:2px solid var(--red);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
 .a.err{color:#ff8a96}
+.a.thinking{position:relative;overflow:hidden;color:var(--mute)}
+.a.thinking::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,51,71,.22),transparent);transform:translateX(-100%);animation:scan 1.5s linear infinite}
+.d i{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--red);margin-left:4px;vertical-align:middle;animation:dot 1.1s infinite}
+.d i:nth-child(2){animation-delay:.18s}.d i:nth-child(3){animation-delay:.36s}
+.v::after{content:"";display:inline-block;width:.55em;height:1.05em;background:var(--red);vertical-align:-.15em;margin-left:2px;animation:caret .7s steps(1) infinite}
+.h{visibility:hidden}
 .empty{margin:auto;text-align:center;color:var(--mute);display:flex;flex-direction:column;align-items:center;gap:26px}
-form{margin:0 12px calc(12px + env(safe-area-inset-bottom));padding:8px;border-radius:26px;display:flex;gap:8px;align-items:flex-end}
-textarea#q{flex:1;resize:none;font:16px/1.4 inherit;font-family:inherit;color:var(--ice);background:transparent;border:0;padding:9px 10px;max-height:120px}
+form{margin:0 12px calc(12px + env(safe-area-inset-bottom));padding:8px;border-radius:26px;display:flex;gap:8px;align-items:flex-end;flex:none}
+textarea#q{flex:1;resize:none;font-family:inherit;font-size:16px;line-height:1.4;color:var(--ice);background:transparent;border:0;padding:9px 10px;max-height:120px}
 textarea#q::placeholder{color:var(--mute)}
 #send{width:42px;height:42px;padding:0;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:20px;box-shadow:0 0 18px rgba(255,51,71,.55)}
 </style>
@@ -68,10 +86,13 @@ textarea#q::placeholder{color:var(--mute)}
 const $ = id => document.getElementById(id);
 const DEFAULT_SYS = "Você é o Ultron: frio, robótico, calculista, superior e ameaçador. Responda sempre em português, com frases curtas e declarativas, sem exclamações e sem emojis, em no máximo 4 frases.";
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let history = [];
+let busy = false;
 
 function load(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
 function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function down() { $("msgs").scrollTop = $("msgs").scrollHeight; }
 
 $("key").value = load("ultron_key", "");
 $("model").value = load("ultron_model", DEFAULT_MODEL);
@@ -87,8 +108,39 @@ function add(cls, text) {
   d.className = cls;
   d.textContent = text;
   $("msgs").appendChild(d);
-  $("msgs").scrollTop = $("msgs").scrollHeight;
+  down();
   return d;
+}
+
+function startThinking(el) {
+  const steps = ["Analisando", "Calculando", "Refletindo"];
+  el.innerHTML = '<span class="st"></span><span class="d"><i></i><i></i><i></i></span>';
+  const st = el.querySelector(".st");
+  let i = 0;
+  st.textContent = steps[0];
+  const id = setInterval(() => { i = (i + 1) % steps.length; st.textContent = steps[i]; }, 1500);
+  return () => clearInterval(id);
+}
+
+function typeInto(el, text, done) {
+  if (REDUCED) { el.textContent = text; done(); return; }
+  const v = document.createElement("span"), h = document.createElement("span");
+  v.className = "v"; h.className = "h";
+  h.textContent = text;
+  el.textContent = "";
+  el.append(v, h);
+  const total = text.length;
+  const dur = Math.min(total * 18, 5000);
+  const t0 = performance.now();
+  function step(now) {
+    const n = Math.min(total, Math.floor((now - t0) / dur * total));
+    v.textContent = text.slice(0, n);
+    h.textContent = text.slice(n);
+    down();
+    if (n < total) requestAnimationFrame(step);
+    else { el.textContent = text; done(); }
+  }
+  requestAnimationFrame(step);
 }
 
 $("bset").onclick = () => $("settings").classList.toggle("open");
@@ -98,14 +150,16 @@ $("bsave").onclick = () => {
   save("ultron_sys", $("sys").value.trim() || DEFAULT_SYS);
   $("settings").classList.remove("open");
 };
-$("bclear").onclick = () => { history = []; showEmpty(); };
+$("bclear").onclick = () => { if (busy) return; history = []; showEmpty(); };
 
 async function ask(text) {
   const key = load("ultron_key", "");
   if (!key) { $("settings").classList.add("open"); add("u", text); add("a err", "Falta a chave da API. Cole-a em Ajustes."); return; }
+  busy = true;
   history.push({ role: "user", text });
   add("u", text);
-  const wait = add("a", "Processando…");
+  const wait = add("a thinking", "");
+  const stop = startThinking(wait);
   $("eye").classList.add("busy");
   try {
     const model = load("ultron_model", DEFAULT_MODEL);
@@ -124,18 +178,25 @@ async function ask(text) {
     const reply = parts.filter(p => p.text && !p.thought).map(p => p.text).join("").trim();
     if (!reply) throw new Error("O Gemini respondeu sem texto. Tente de novo.");
     history.push({ role: "model", text: reply });
-    wait.textContent = reply;
+    stop();
+    wait.className = "a";
+    $("eye").classList.remove("busy");
+    $("eye").classList.add("speak");
+    typeInto(wait, reply, () => { $("eye").classList.remove("speak"); busy = false; });
   } catch (e) {
     history.pop();
+    stop();
     wait.className = "a err";
     wait.textContent = "Erro. " + e.message;
+    $("eye").classList.remove("busy");
+    busy = false;
+    down();
   }
-  $("eye").classList.remove("busy");
-  $("msgs").scrollTop = $("msgs").scrollHeight;
 }
 
 $("f").onsubmit = e => {
   e.preventDefault();
+  if (busy) return;
   const t = $("q").value.trim();
   if (!t) return;
   $("q").value = "";
@@ -143,6 +204,12 @@ $("f").onsubmit = e => {
   ask(t);
 };
 $("q").oninput = () => { $("q").style.height = "auto"; $("q").style.height = Math.min($("q").scrollHeight, 120) + "px"; };
+
+if (window.visualViewport) {
+  const fit = () => { document.body.style.height = window.visualViewport.height + "px"; window.scrollTo(0, 0); down(); };
+  window.visualViewport.addEventListener("resize", fit);
+  fit();
+}
 showEmpty();
 </script>
 </body>
