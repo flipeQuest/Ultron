@@ -85,6 +85,8 @@ textarea#q::placeholder{color:var(--mute)}
   <input id="fvoice" type="text" autocomplete="off" placeholder="O código no final do endereço da sua voz">
   <label for="fmodel">Modelo de voz</label>
   <input id="fmodel" type="text" autocomplete="off">
+  <label for="fproxy">Endereço do intermediário (opcional)</label>
+  <input id="fproxy" type="text" autocomplete="off" placeholder="https://ultron-voz.seu-usuario.workers.dev">
   <label><input id="fspeak" type="checkbox">Falar as respostas</label>
   <p>As chaves ficam salvas só neste aparelho e são enviadas apenas ao Google e ao Fish Audio.</p>
   <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -120,6 +122,7 @@ $("sys").value = load("ultron_sys", DEFAULT_SYS);
 $("fkey").value = load("ultron_fkey", "");
 $("fvoice").value = load("ultron_fvoice", "");
 $("fmodel").value = load("ultron_fmodel", DEFAULT_FMODEL);
+$("fproxy").value = load("ultron_fproxy", "");
 $("fspeak").checked = load("ultron_speak", "1") === "1";
 
 function saveSettings() {
@@ -129,6 +132,7 @@ function saveSettings() {
   save("ultron_fkey", $("fkey").value.trim());
   save("ultron_fvoice", $("fvoice").value.trim());
   save("ultron_fmodel", $("fmodel").value.trim() || DEFAULT_FMODEL);
+  save("ultron_fproxy", $("fproxy").value.trim());
   save("ultron_speak", $("fspeak").checked ? "1" : "0");
 }
 
@@ -158,7 +162,7 @@ async function fetchVoice(text) {
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 20000);
   try {
-    const r = await fetch("https://api.fish.audio/v1/tts", {
+    const r = await fetch(load("ultron_fproxy", "") || "https://api.fish.audio/v1/tts", {
       method: "POST",
       signal: ctrl.signal,
       headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json", "model": load("ultron_fmodel", DEFAULT_FMODEL) },
