@@ -41,6 +41,7 @@ form:focus-within{border-color:rgba(255,51,71,.5)}
 #settings.open{display:block}
 #settings label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
 #settings input[type=text],#settings input[type=password],#settings textarea{width:100%;font-family:inherit;font-size:16px;line-height:1.4;color:var(--ice);background:rgba(0,0,0,.3);border:1px solid var(--edge);border-radius:12px;padding:9px}
+#settings select{width:100%;font-family:inherit;font-size:16px;color:var(--ice);background:rgba(0,0,0,.3);border:1px solid var(--edge);border-radius:12px;padding:9px}
 #settings input[type=checkbox]{width:18px;height:18px;margin:0 8px 0 0;vertical-align:-3px;accent-color:var(--red)}
 #settings h2{font-size:14px;font-weight:500;letter-spacing:.08em;margin:18px 0 0;padding-top:14px;border-top:1px solid var(--edge)}
 #settings p{font-size:13px;color:var(--mute);margin:10px 0 0}
@@ -80,22 +81,14 @@ textarea#q::placeholder{color:var(--mute)}
   <input id="model" type="text" autocomplete="off">
   <label for="sys">Personalidade</label>
   <textarea id="sys" rows="4"></textarea>
-  <h2>Voz (Fish Audio)</h2>
-  <label for="fkey">Chave da API do Fish Audio</label>
-  <input id="fkey" type="password" autocomplete="off">
-  <label for="fvoice">ID da voz clonada</label>
-  <input id="fvoice" type="text" autocomplete="off" placeholder="O código no final do endereço da sua voz">
-  <label for="fmodel">Modelo de voz</label>
-  <input id="fmodel" type="text" autocomplete="off">
-  <label for="fproxy">Endereço do intermediário (opcional)</label>
-  <input id="fproxy" type="text" autocomplete="off" placeholder="https://ultron-voz.seu-usuario.workers.dev">
-  <label for="ftemp">Variação da voz (0 a 1, menor = mais estável)</label>
-  <input id="ftemp" type="text" inputmode="decimal" autocomplete="off">
-  <label for="fspeed">Velocidade da fala (0,5 a 2; 1 = normal)</label>
-  <input id="fspeed" type="text" inputmode="decimal" autocomplete="off">
+  <h2>Voz</h2>
+  <label for="vprov">Serviço de voz</label>
+  <select id="vprov"><option value="fish">Fish Audio</option><option value="eleven">ElevenLabs</option><option value="custom">Outro site</option></select>
+  <div id="vfields"></div>
+  <p id="vhint"></p>
   <label><input id="fspeak" type="checkbox">Falar cada resposta automaticamente</label>
   <p>Desligado, o áudio só é gerado quando você toca no botão de som, o que economiza créditos.</p>
-  <p>As chaves ficam salvas só neste aparelho e são enviadas apenas ao Google e ao Fish Audio.</p>
+  <p>As chaves ficam salvas só neste aparelho e são enviadas apenas ao Google e ao serviço de voz escolhido.</p>
   <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
     <button id="bsave" type="button">Salvar ajustes</button>
     <button id="btest" type="button">Testar voz</button>
@@ -126,24 +119,126 @@ function down() { $("msgs").scrollTop = $("msgs").scrollHeight; }
 $("key").value = load("ultron_key", "");
 $("model").value = load("ultron_model", DEFAULT_MODEL);
 $("sys").value = load("ultron_sys", DEFAULT_SYS);
-$("fkey").value = load("ultron_fkey", "");
-$("fvoice").value = load("ultron_fvoice", "");
-$("fmodel").value = load("ultron_fmodel", DEFAULT_FMODEL);
-$("fproxy").value = load("ultron_fproxy", "");
-$("ftemp").value = load("ultron_ftemp", "0.4");
-$("fspeed").value = load("ultron_fspeed", "0.9");
+/* ---------- Provedores de voz ---------- */
+function num(v, d, lo, hi) {
+  let n = parseFloat(String(v).replace(",", "."));
+  if (isNaN(n)) n = d;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+const PROVIDERS = {
+  fish: {
+    name: "Fish Audio",
+    need: ["key"],
+    hint: "O ID da voz é o código no fim do endereço da sua voz. O modelo grátis (s2.1-pro-free) vale até 30/11.",
+    fields: [
+      { k: "key", label: "Chave da API do Fish Audio", type: "password" },
+      { k: "voice", label: "ID da voz clonada" },
+      { k: "model", label: "Modelo de voz", def: "s2.1-pro-free" },
+      { k: "temp", label: "Variação da voz (0 a 1, menor = mais estável)", def: "0.4", dec: true },
+      { k: "speed", label: "Velocidade da fala (0,5 a 2; 1 = normal)", def: "0.9", dec: true },
+      { k: "proxy", label: "Endereço do intermediário (opcional)", ph: "https://seu-worker.workers.dev" }
+    ],
+    build(c, text) {
+      const body = { text, format: "mp3", temperature: num(c.temp, 0.4, 0, 1), top_p: 0.6, latency: "normal", prosody: { speed: num(c.speed, 0.9, 0.5, 2), volume: 0 } };
+      if (c.voice) body.reference_id = c.voice;
+      return { url: "https://api.fish.audio/v1/tts", headers: { "Authorization": "Bearer " + c.key, "Content-Type": "application/json", "model": c.model }, body };
+    }
+  },
+  eleven: {
+    name: "ElevenLabs",
+    need: ["key", "voice"],
+    hint: "Use o ID da voz (Voice ID) da sua conta. Nos modelos v3 e v4, só a estabilidade é enviada; similaridade, estilo e velocidade são ignorados.",
+    fields: [
+      { k: "key", label: "Chave da API do ElevenLabs", type: "password" },
+      { k: "voice", label: "ID da voz (Voice ID)" },
+      { k: "model", label: "Modelo (eleven_v4, eleven_v4_turbo, eleven_multilingual_v2...)", def: "eleven_v4" },
+      { k: "stab", label: "Estabilidade (0 a 1)", def: "0.75", dec: true },
+      { k: "sim", label: "Similaridade (0 a 1)", def: "0.85", dec: true },
+      { k: "style", label: "Estilo (0 a 1)", def: "0", dec: true },
+      { k: "speed", label: "Velocidade (0,7 a 1,2; 1 = normal)", def: "0.95", dec: true },
+      { k: "proxy", label: "Endereço do intermediário (opcional)", ph: "https://seu-worker.workers.dev" }
+    ],
+    build(c, text) {
+      const newer = /^eleven_v[34]/.test(c.model);
+      const vs = newer ? { stability: num(c.stab, 0.75, 0, 1) } : { stability: num(c.stab, 0.75, 0, 1), similarity_boost: num(c.sim, 0.85, 0, 1), style: num(c.style, 0, 0, 1), use_speaker_boost: true, speed: num(c.speed, 0.95, 0.7, 1.2) };
+      const body = { text, model_id: c.model, voice_settings: vs };
+      return { url: "https://api.elevenlabs.io/v1/text-to-speech/" + encodeURIComponent(c.voice) + "?output_format=mp3_44100_128", headers: { "xi-api-key": c.key, "Content-Type": "application/json" }, body };
+    }
+  },
+  custom: {
+    name: "Outro site",
+    need: ["url"],
+    hint: "No corpo, use {{text}}, {{voice}} e {{model}}. A resposta do site precisa ser um arquivo de áudio.",
+    fields: [
+      { k: "url", label: "Endereço da API (aceita {{voice}})", ph: "https://api.exemplo.com/v1/tts" },
+      { k: "key", label: "Chave da API", type: "password" },
+      { k: "hname", label: "Nome do cabeçalho da chave", def: "Authorization" },
+      { k: "hprefix", label: "Prefixo da chave (ex.: Bearer; deixe vazio se não houver)", def: "Bearer" },
+      { k: "voice", label: "ID da voz" },
+      { k: "model", label: "Modelo" },
+      { k: "body", label: "Corpo do pedido (JSON)", type: "area", def: '{"text":"{{text}}","voice":"{{voice}}","model":"{{model}}"}' },
+      { k: "proxy", label: "Endereço do intermediário (opcional)", ph: "https://seu-worker.workers.dev" }
+    ],
+    build(c, text) {
+      const esc = v => JSON.stringify(String(v == null ? "" : v)).slice(1, -1);
+      const fill = t => t.replace(/\{\{text\}\}/g, esc(text)).replace(/\{\{voice\}\}/g, esc(c.voice)).replace(/\{\{model\}\}/g, esc(c.model));
+      const headers = { "Content-Type": "application/json" };
+      if (c.key) headers[c.hname || "Authorization"] = (c.hprefix ? c.hprefix + " " : "") + c.key;
+      return { url: c.url.replace(/\{\{voice\}\}/g, encodeURIComponent(c.voice || "")), headers, body: fill(c.body) };
+    }
+  }
+};
+
+function loadVCfg() {
+  try { const j = JSON.parse(load("ultron_vcfg", "")); if (j && j.p && PROVIDERS[j.p]) return j; } catch (e) {}
+  return { p: "fish", fish: { key: load("ultron_fkey", ""), voice: load("ultron_fvoice", ""), model: load("ultron_fmodel", DEFAULT_FMODEL), proxy: load("ultron_fproxy", ""), temp: load("ultron_ftemp", "0.4"), speed: load("ultron_fspeed", "0.9") }, eleven: {}, custom: {} };
+}
+let VCFG = loadVCfg();
+
+function cfg() {
+  const P = PROVIDERS[VCFG.p], c = VCFG[VCFG.p] || {}, o = {};
+  P.fields.forEach(f => { const v = String(c[f.k] == null ? "" : c[f.k]).trim(); o[f.k] = v !== "" ? v : (f.def || ""); });
+  return o;
+}
+function hasVoice() { const c = cfg(); return PROVIDERS[VCFG.p].need.every(k => c[k]); }
+
+function renderFields() {
+  const P = PROVIDERS[VCFG.p], c = VCFG[VCFG.p] || {};
+  $("vprov").value = VCFG.p;
+  $("vhint").textContent = P.hint;
+  const box = $("vfields");
+  box.innerHTML = "";
+  P.fields.forEach(f => {
+    const id = "vf_" + f.k;
+    const lab = document.createElement("label");
+    lab.htmlFor = id;
+    lab.textContent = f.label;
+    const inp = document.createElement(f.type === "area" ? "textarea" : "input");
+    inp.id = id;
+    if (f.type === "area") inp.rows = 4;
+    else { inp.type = f.type === "password" ? "password" : "text"; if (f.dec) inp.inputMode = "decimal"; }
+    inp.autocomplete = "off";
+    if (f.ph) inp.placeholder = f.ph;
+    inp.value = (c[f.k] != null && c[f.k] !== "") ? c[f.k] : (f.def || "");
+    box.append(lab, inp);
+  });
+}
+function collectFields() {
+  const P = PROVIDERS[VCFG.p];
+  const c = VCFG[VCFG.p] || (VCFG[VCFG.p] = {});
+  P.fields.forEach(f => { const el = $("vf_" + f.k); if (el) c[f.k] = el.value.trim(); });
+}
+$("vprov").onchange = () => { collectFields(); VCFG.p = $("vprov").value; renderFields(); };
+renderFields();
 $("fspeak").checked = load("ultron_auto", "0") === "1";
 
 function saveSettings() {
   save("ultron_key", $("key").value.trim());
   save("ultron_model", $("model").value.trim() || DEFAULT_MODEL);
   save("ultron_sys", $("sys").value.trim() || DEFAULT_SYS);
-  save("ultron_fkey", $("fkey").value.trim());
-  save("ultron_fvoice", $("fvoice").value.trim());
-  save("ultron_fmodel", $("fmodel").value.trim() || DEFAULT_FMODEL);
-  save("ultron_fproxy", $("fproxy").value.trim());
-  save("ultron_ftemp", $("ftemp").value.trim().replace(",", "."));
-  save("ultron_fspeed", $("fspeed").value.trim().replace(",", "."));
+  collectFields();
+  save("ultron_vcfg", JSON.stringify(VCFG));
   save("ultron_auto", $("fspeak").checked ? "1" : "0");
 }
 
@@ -161,35 +256,26 @@ function add(cls, text) {
   return d;
 }
 
-/* ---------- Voz (Fish Audio) ---------- */
+/* ---------- Voz ---------- */
 function unlock() { try { player.onended = null; player.onerror = null; player.src = SILENT; player.play().catch(() => {}); } catch (e) {} }
 
 async function fetchVoice(text) {
-  const key = load("ultron_fkey", "");
-  if (!key) throw new Error("Falta a chave do Fish Audio em Ajustes.");
-  let temp = parseFloat(load("ultron_ftemp", "0.4"));
-  if (isNaN(temp)) temp = 0.4;
-  temp = Math.min(1, Math.max(0, temp));
-  let speed = parseFloat(load("ultron_fspeed", "0.9"));
-  if (isNaN(speed)) speed = 0.9;
-  speed = Math.min(2, Math.max(0.5, speed));
-  const body = { text, format: "mp3", temperature: temp, top_p: 0.6, latency: "normal", prosody: { speed: speed, volume: 0 } };
-  const voice = load("ultron_fvoice", "");
-  if (voice) body.reference_id = voice;
+  const P = PROVIDERS[VCFG.p], c = cfg();
+  if (P.need.some(k => !c[k])) throw new Error("Faltam dados da voz (" + P.name + ") em Ajustes.");
+  const rq = P.build(c, text);
+  let url = rq.url;
+  if (c.proxy) url = c.proxy.split("?")[0] + "?target=" + encodeURIComponent(rq.url);
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 20000);
   try {
-    const r = await fetch(load("ultron_fproxy", "") || "https://api.fish.audio/v1/tts", {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json", "model": load("ultron_fmodel", DEFAULT_FMODEL) },
-      body: JSON.stringify(body)
-    });
-    if (!r.ok) { const t = await r.text(); throw new Error("Fish " + r.status + ": " + t.slice(0, 140)); }
+    const r = await fetch(url, { method: "POST", signal: ctrl.signal, headers: rq.headers, body: typeof rq.body === "string" ? rq.body : JSON.stringify(rq.body) });
+    if (!r.ok) { const t = await r.text(); throw new Error(P.name + " " + r.status + ": " + t.slice(0, 140)); }
+    const type = (r.headers.get("content-type") || "").toLowerCase();
+    if (type.includes("json") || type.includes("text")) { const t = await r.text(); throw new Error(P.name + " não devolveu áudio: " + t.slice(0, 120)); }
     return URL.createObjectURL(await r.blob());
   } catch (e) {
-    if (e.name === "AbortError") throw new Error("O Fish demorou demais para responder.");
-    if (e instanceof TypeError) throw new Error("O navegador não conseguiu falar com o Fish (bloqueio ou sem internet).");
+    if (e.name === "AbortError") throw new Error(P.name + " demorou demais para responder.");
+    if (e instanceof TypeError) throw new Error("O navegador não conseguiu falar com " + P.name + " (bloqueio ou sem internet). Se persistir, use o intermediário.");
     throw e;
   } finally { clearTimeout(to); }
 }
@@ -223,7 +309,7 @@ function note(el, msg) {
 
 function addEar(el, text, url, err) {
   if (err) note(el, err);
-  if (!load("ultron_fkey", "")) return;
+  if (!hasVoice()) return;
   const b = document.createElement("button");
   b.type = "button";
   b.className = "ear";
@@ -326,7 +412,7 @@ async function ask(text) {
     history.push({ role: "model", text: reply });
 
     let voiceUrl = null, voiceErr = null;
-    if (load("ultron_auto", "0") === "1" && load("ultron_fkey", "")) {
+    if (load("ultron_auto", "0") === "1" && hasVoice()) {
       try { voiceUrl = await fetchVoice(reply); } catch (e) { voiceErr = e.message; }
     }
     stop();
