@@ -55,7 +55,9 @@ form:focus-within{border-color:rgba(255,51,71,.5)}
 .d i:nth-child(2){animation-delay:.18s}.d i:nth-child(3){animation-delay:.36s}
 .v::after{content:"";display:inline-block;width:.55em;height:1.05em;background:var(--red);vertical-align:-.15em;margin-left:2px;animation:caret .7s steps(1) infinite}
 .h{visibility:hidden}
-.ear{display:block;margin-top:10px;min-height:30px;padding:3px 12px;font:13px/1.4 system-ui,sans-serif;color:var(--mute)}
+.ear{display:flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:36px;margin-top:10px;padding:0;border-radius:50%;color:var(--mute)}
+.ear.on{color:var(--red);border-color:rgba(255,51,71,.55)}
+.spin{animation:spin 1s linear infinite}
 .note{display:block;margin-top:8px;font:13px/1.4 system-ui,sans-serif;color:#ff8a96}
 .empty{margin:auto;text-align:center;color:var(--mute);display:flex;flex-direction:column;align-items:center;gap:26px}
 form{margin:0 12px calc(12px + env(safe-area-inset-bottom));padding:8px;border-radius:26px;display:flex;gap:8px;align-items:flex-end;flex:none}
@@ -91,7 +93,8 @@ textarea#q::placeholder{color:var(--mute)}
   <input id="ftemp" type="text" inputmode="decimal" autocomplete="off">
   <label for="fspeed">Velocidade da fala (0,5 a 2; 1 = normal)</label>
   <input id="fspeed" type="text" inputmode="decimal" autocomplete="off">
-  <label><input id="fspeak" type="checkbox">Falar as respostas</label>
+  <label><input id="fspeak" type="checkbox">Falar cada resposta automaticamente</label>
+  <p>Desligado, o áudio só é gerado quando você toca no botão de som, o que economiza créditos.</p>
   <p>As chaves ficam salvas só neste aparelho e são enviadas apenas ao Google e ao Fish Audio.</p>
   <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
     <button id="bsave" type="button">Salvar ajustes</button>
@@ -129,7 +132,7 @@ $("fmodel").value = load("ultron_fmodel", DEFAULT_FMODEL);
 $("fproxy").value = load("ultron_fproxy", "");
 $("ftemp").value = load("ultron_ftemp", "0.4");
 $("fspeed").value = load("ultron_fspeed", "0.9");
-$("fspeak").checked = load("ultron_speak", "1") === "1";
+$("fspeak").checked = load("ultron_auto", "0") === "1";
 
 function saveSettings() {
   save("ultron_key", $("key").value.trim());
@@ -141,7 +144,7 @@ function saveSettings() {
   save("ultron_fproxy", $("fproxy").value.trim());
   save("ultron_ftemp", $("ftemp").value.trim().replace(",", "."));
   save("ultron_fspeed", $("fspeed").value.trim().replace(",", "."));
-  save("ultron_speak", $("fspeak").checked ? "1" : "0");
+  save("ultron_auto", $("fspeak").checked ? "1" : "0");
 }
 
 function showEmpty() {
@@ -159,7 +162,7 @@ function add(cls, text) {
 }
 
 /* ---------- Voz (Fish Audio) ---------- */
-function unlock() { try { player.src = SILENT; player.play().catch(() => {}); } catch (e) {} }
+function unlock() { try { player.onended = null; player.onerror = null; player.src = SILENT; player.play().catch(() => {}); } catch (e) {} }
 
 async function fetchVoice(text) {
   const key = load("ultron_fkey", "");
@@ -198,26 +201,51 @@ function play(url, onend) {
   player.play().catch(() => { if (onend) onend(); });
 }
 
+const ICONS = {
+  idle: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+  load: '<svg class="spin" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
+  play: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
+};
+let activeBtn = null;
+
+function setBtn(b, st) {
+  b.dataset.s = st;
+  b.classList.toggle("on", st === "play");
+  b.innerHTML = ICONS[st];
+  b.setAttribute("aria-label", st === "play" ? "Parar áudio" : st === "load" ? "Gerando voz" : "Ouvir resposta");
+}
+
+function note(el, msg) {
+  let n = el.querySelector(".note");
+  if (!n) { n = document.createElement("span"); n.className = "note"; el.appendChild(n); }
+  n.textContent = msg ? "Áudio indisponível: " + msg : "";
+}
+
 function addEar(el, text, url, err) {
-  if (err) {
-    const n = document.createElement("span");
-    n.className = "note";
-    n.textContent = "Áudio indisponível: " + err;
-    el.appendChild(n);
-  }
+  if (err) note(el, err);
   if (!load("ultron_fkey", "")) return;
   const b = document.createElement("button");
   b.type = "button";
   b.className = "ear";
-  b.textContent = url ? "Ouvir de novo" : "Ouvir";
+  setBtn(b, "idle");
   b.onclick = async () => {
-    b.disabled = true;
+    if (b.dataset.s === "play") {
+      player.pause(); player.currentTime = 0;
+      setBtn(b, "idle");
+      $("eye").classList.remove("speak");
+      return;
+    }
+    if (b.dataset.s === "load") return;
+    if (!url) unlock();
+    if (activeBtn && activeBtn !== b) setBtn(activeBtn, "idle");
+    activeBtn = b;
+    note(el, "");
     try {
-      if (!url) { b.textContent = "Gerando voz…"; url = await fetchVoice(text); }
-      play(url);
-      b.textContent = "Ouvir de novo";
-    } catch (e) { b.textContent = e.message; }
-    b.disabled = false;
+      if (!url) { setBtn(b, "load"); url = await fetchVoice(text); }
+      setBtn(b, "play");
+      $("eye").classList.add("speak");
+      play(url, () => { setBtn(b, "idle"); $("eye").classList.remove("speak"); });
+    } catch (e) { setBtn(b, "idle"); note(el, e.message); }
   };
   el.appendChild(b);
   down();
@@ -298,7 +326,7 @@ async function ask(text) {
     history.push({ role: "model", text: reply });
 
     let voiceUrl = null, voiceErr = null;
-    if (load("ultron_speak", "1") === "1" && load("ultron_fkey", "")) {
+    if (load("ultron_auto", "0") === "1" && load("ultron_fkey", "")) {
       try { voiceUrl = await fetchVoice(reply); } catch (e) { voiceErr = e.message; }
     }
     stop();
