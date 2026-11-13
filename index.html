@@ -59,7 +59,7 @@ form:focus-within{border-color:rgba(255,51,71,.5)}
 .d i:nth-child(2){animation-delay:.18s}.d i:nth-child(3){animation-delay:.36s}
 .v::after{content:"";display:inline-block;width:.55em;height:1.05em;background:var(--red);vertical-align:-.15em;margin-left:2px;animation:caret .7s steps(1) infinite}
 .h{visibility:hidden}
-.ear{display:flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:36px;margin-top:10px;padding:0;border-radius:50%;color:var(--mute)}
+.ear{display:flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:36px;padding:0;border-radius:50%;color:var(--mute)}
 .ear.on{color:var(--red);border-color:rgba(255,51,71,.55)}
 .spin{animation:spin 1s linear infinite}
 .note{display:block;margin-top:8px;font:13px/1.4 system-ui,sans-serif;color:#ff8a96}
@@ -68,14 +68,27 @@ form{margin:0 12px calc(12px + env(safe-area-inset-bottom));padding:8px;border-r
 textarea#q{flex:1;resize:none;font-family:inherit;font-size:16px;line-height:1.4;color:var(--ice);background:transparent;border:0;padding:9px 10px;max-height:120px}
 textarea#q::placeholder{color:var(--mute)}
 #send{width:42px;height:42px;padding:0;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:20px;box-shadow:0 0 18px rgba(255,51,71,.55)}
+#msgs>*{flex-shrink:0}
+.tools{display:flex;gap:8px;margin-top:10px}
+.ear[hidden]{display:none}
+.ib{width:38px;padding:0;display:flex;align-items:center;justify-content:center}
+#convs{display:none;margin:10px 12px 0;padding:8px;border-radius:22px;flex:none;max-height:62dvh;overflow-y:auto}
+#convs.open{display:block}
+.ci{display:flex;align-items:center;gap:8px;padding:2px 4px 2px 8px;border-radius:14px}
+.ci.on{background:rgba(255,51,71,.12)}
+.ci .t{flex:1;min-width:0;text-align:left;background:none;border:0;padding:6px 0;min-height:48px}
+.ci .t b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci .t small{color:var(--mute);font-size:12px}
+.x.arm{width:auto;border-radius:14px;padding:0 12px;color:var(--red);border-color:rgba(255,51,71,.55)}
 </style>
 </head>
 <body>
 <header class="glass">
   <span id="eye" class="eye" aria-hidden="true"></span>
   <h1>Ultron</h1>
+  <button id="bconv" class="ib" type="button" aria-label="Conversas"></button>
+  <button id="bnew" class="ib" type="button" aria-label="Nova conversa"></button>
   <button id="bset" type="button">Ajustes</button>
-  <button id="bclear" type="button">Limpar</button>
 </header>
 <section id="settings" class="glass">
   <label for="key">Chave da API do Gemini</label>
@@ -98,6 +111,7 @@ textarea#q::placeholder{color:var(--mute)}
   </div>
   <p id="tmsg" role="status"></p>
 </section>
+<section id="convs" class="glass"></section>
 <main id="msgs" aria-live="polite"></main>
 <form id="f" class="glass">
   <textarea id="q" rows="1" placeholder="Fale com o Ultron" aria-label="Mensagem"></textarea>
@@ -112,7 +126,7 @@ const SAMPLE = "Eu observo. Eu calculo. Eu concluo.";
 const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const player = new Audio();
-let history = [];
+let cur = newConv();
 let busy = false;
 
 function load(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
@@ -262,7 +276,7 @@ function add(cls, text) {
 /* ---------- Voz ---------- */
 function unlock() { try { player.onended = null; player.onerror = null; player.src = SILENT; player.play().catch(() => {}); } catch (e) {} }
 
-async function fetchVoice(text) {
+async function fetchVoiceBlob(text) {
   const P = PROVIDERS[VCFG.p], c = cfg();
   if (P.need.some(k => !c[k])) throw new Error("Faltam dados da voz (" + P.name + ") em Ajustes.");
   const rq = P.build(c, text);
@@ -275,7 +289,7 @@ async function fetchVoice(text) {
     if (!r.ok) { const t = await r.text(); throw new Error(P.name + " " + r.status + ": " + t.slice(0, 140)); }
     const type = (r.headers.get("content-type") || "").toLowerCase();
     if (type.includes("json") || type.includes("text")) { const t = await r.text(); throw new Error(P.name + " não devolveu áudio: " + t.slice(0, 120)); }
-    return URL.createObjectURL(await r.blob());
+    return await r.blob();
   } catch (e) {
     if (e.name === "AbortError") throw new Error(P.name + " demorou demais para responder.");
     if (e instanceof TypeError) throw new Error("O navegador não conseguiu falar com " + P.name + " (bloqueio ou sem internet). Se persistir, use o intermediário.");
@@ -310,33 +324,37 @@ function note(el, msg) {
   n.textContent = msg ? "Áudio indisponível: " + msg : "";
 }
 
-function addEar(el, text, url, err) {
+function addEar(el, entry, err) {
+  const conv = cur;
   if (err) note(el, err);
-  if (!hasVoice()) return;
+  if (!hasVoice() && !hasAudio(entry)) return;
+  const row = document.createElement("div");
+  row.className = "tools";
   const b = document.createElement("button");
-  b.type = "button";
-  b.className = "ear";
+  b.type = "button"; b.className = "ear";
   setBtn(b, "idle");
+  const dl = document.createElement("button");
+  dl.type = "button"; dl.className = "ear"; dl.hidden = !hasAudio(entry);
+  dl.innerHTML = ICONS.dl; dl.setAttribute("aria-label", "Baixar áudio");
+  dl.onclick = () => downloadAudio(entry);
   b.onclick = async () => {
-    if (b.dataset.s === "play") {
-      player.pause(); player.currentTime = 0;
-      setBtn(b, "idle");
-      $("eye").classList.remove("speak");
-      return;
-    }
+    if (b.dataset.s === "play") { player.pause(); player.currentTime = 0; setBtn(b, "idle"); $("eye").classList.remove("speak"); return; }
     if (b.dataset.s === "load") return;
-    if (!url) unlock();
+    unlock();
     if (activeBtn && activeBtn !== b) setBtn(activeBtn, "idle");
     activeBtn = b;
     note(el, "");
     try {
-      if (!url) { setBtn(b, "load"); url = await fetchVoice(text); }
+      let a = await getAudio(entry);
+      if (!a) { setBtn(b, "load"); a = await makeAudio(entry, conv); }
+      dl.hidden = false;
       setBtn(b, "play");
       $("eye").classList.add("speak");
-      play(url, () => { setBtn(b, "idle"); $("eye").classList.remove("speak"); });
+      play(a.url, () => { setBtn(b, "idle"); $("eye").classList.remove("speak"); });
     } catch (e) { setBtn(b, "idle"); note(el, e.message); }
   };
-  el.appendChild(b);
+  row.append(b, dl);
+  el.appendChild(row);
   down();
 }
 
@@ -372,8 +390,142 @@ function typeInto(el, text, done) {
   requestAnimationFrame(step);
 }
 
+/* ---------- Conversas salvas e áudios (IndexedDB) ---------- */
+const LIVE = new WeakMap();
+let DBP = null;
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function newConv() { return { id: uid(), title: "", created: Date.now(), updated: Date.now(), history: [] }; }
+function SV(p) { return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>'; }
+ICONS.dl = SV('<path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>');
+ICONS.trash = SV('<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>');
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+
+function db() {
+  if (!DBP) DBP = new Promise((ok, no) => {
+    if (!window.indexedDB) return no(new Error("sem IndexedDB"));
+    const r = indexedDB.open("ultron", 1);
+    r.onupgradeneeded = () => { const d = r.result; d.createObjectStore("convs", { keyPath: "id" }); d.createObjectStore("audios", { keyPath: "id" }).createIndex("convId", "convId"); };
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => no(r.error);
+  });
+  return DBP;
+}
+function tx(store, mode, fn) {
+  return db().then(d => new Promise((ok, no) => {
+    const t = d.transaction(store, mode);
+    const r = fn(t.objectStore(store));
+    t.oncomplete = () => ok(r && r.result);
+    t.onerror = t.onabort = () => no(t.error);
+  }));
+}
+async function delConv(id) {
+  const d = await db();
+  return new Promise((ok, no) => {
+    const t = d.transaction(["convs", "audios"], "readwrite");
+    t.objectStore("convs").delete(id);
+    const au = t.objectStore("audios");
+    const c = au.index("convId").openKeyCursor(IDBKeyRange.only(id));
+    c.onsuccess = () => { const k = c.result; if (k) { au.delete(k.primaryKey); k.continue(); } };
+    t.oncomplete = ok;
+    t.onerror = t.onabort = () => no(t.error);
+  });
+}
+async function saveConv(c) {
+  if (c.dead || !c.history.length) return;
+  if (!c.title) { const f = c.history.find(e => e.role === "user"); c.title = (f ? f.text : "Conversa").replace(/\s+/g, " ").slice(0, 60); }
+  c.updated = Date.now();
+  try { await tx("convs", "readwrite", s => s.put(c)); } catch (e) {}
+}
+
+function hasAudio(entry) { return LIVE.has(entry) || !!entry.aid; }
+async function getAudio(entry) {
+  let a = LIVE.get(entry);
+  if (a) return a;
+  if (!entry.aid) return null;
+  try {
+    const r = await tx("audios", "readonly", s => s.get(entry.aid));
+    if (!r) return null;
+    const blob = new Blob([r.data], { type: r.type || "audio/mpeg" });
+    a = { blob, url: URL.createObjectURL(blob) };
+    LIVE.set(entry, a);
+    return a;
+  } catch (e) { return null; }
+}
+async function makeAudio(entry, conv) {
+  const blob = await fetchVoiceBlob(entry.text);
+  const a = { blob, url: URL.createObjectURL(blob) };
+  LIVE.set(entry, a);
+  if (!conv.dead) {
+    try {
+      const data = await blob.arrayBuffer(), aid = uid();
+      await tx("audios", "readwrite", s => s.put({ id: aid, convId: conv.id, type: blob.type, data, created: Date.now() }));
+      entry.aid = aid;
+      await saveConv(conv);
+    } catch (e) {}
+  }
+  return a;
+}
+async function fetchVoice(text) { return URL.createObjectURL(await fetchVoiceBlob(text)); }
+async function downloadAudio(entry) {
+  const a = await getAudio(entry);
+  if (!a) return;
+  const ext = { "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg", "audio/webm": "webm", "audio/mp4": "m4a" }[(a.blob.type || "").split(";")[0]] || "mp3";
+  const name = "ultron-" + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "") + "." + ext;
+  const file = new File([a.blob], name, { type: a.blob.type || "audio/mpeg" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (e) { if (e.name === "AbortError") return; }
+  const l = document.createElement("a");
+  l.href = a.url; l.download = name;
+  document.body.appendChild(l); l.click(); l.remove();
+}
+
+function stopAudio() { try { player.onended = null; player.onerror = null; player.pause(); } catch (e) {} $("eye").classList.remove("speak"); activeBtn = null; }
+function release(c) { c.history.forEach(e => { const a = LIVE.get(e); if (a) { URL.revokeObjectURL(a.url); LIVE.delete(e); } }); }
+function dropCur() { stopAudio(); release(cur); cur = newConv(); showEmpty(); }
+function newChat() { dropCur(); $("convs").classList.remove("open"); }
+function openConv(c) {
+  stopAudio(); release(cur); cur = c;
+  $("msgs").innerHTML = "";
+  c.history.forEach(e => { if (e.role === "user") add("u", e.text); else addEar(add("a", e.text), e); });
+  down();
+  $("convs").classList.remove("open");
+}
+async function renderList() {
+  const box = $("convs");
+  let list;
+  try { list = await tx("convs", "readonly", s => s.getAll()); }
+  catch (e) { box.textContent = "Não consegui abrir as conversas salvas neste aparelho."; return; }
+  list.sort((x, y) => y.updated - x.updated);
+  box.innerHTML = "";
+  if (!list.length) { const p = document.createElement("p"); p.style.cssText = "margin:8px;color:var(--mute);font-size:14px"; p.textContent = "Nenhuma conversa salva ainda."; box.append(p); return; }
+  list.forEach(c => {
+    const row = document.createElement("div");
+    row.className = "ci" + (c.id === cur.id ? " on" : "");
+    const t = document.createElement("button");
+    t.type = "button"; t.className = "t"; t.innerHTML = "<b></b><small></small>";
+    const n = c.history.filter(e => e.role === "user").length;
+    t.firstChild.textContent = c.title;
+    t.lastChild.textContent = new Date(c.updated).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + " · " + n + (n === 1 ? " pergunta" : " perguntas");
+    t.onclick = () => { if (busy) return; if (c.id === cur.id) box.classList.remove("open"); else openConv(c); };
+    const x = document.createElement("button");
+    x.type = "button"; x.className = "ear x"; x.innerHTML = ICONS.trash; x.setAttribute("aria-label", "Apagar conversa");
+    let tm = 0;
+    x.onclick = async () => {
+      if (busy && c.id === cur.id) return;
+      if (!tm) { x.textContent = "Apagar?"; x.classList.add("arm"); tm = setTimeout(() => { x.innerHTML = ICONS.trash; x.classList.remove("arm"); tm = 0; }, 3000); return; }
+      clearTimeout(tm);
+      try { await delConv(c.id); } catch (e) { return; }
+      if (c.id === cur.id) { cur.dead = true; dropCur(); }
+      renderList();
+    };
+    row.append(t, x);
+    box.append(row);
+  });
+}
+
 /* ---------- Ajustes e conversa ---------- */
-$("bset").onclick = () => $("settings").classList.toggle("open");
+$("bset").onclick = () => { $("convs").classList.remove("open"); $("settings").classList.toggle("open"); };
 $("bsave").onclick = () => { saveSettings(); $("tmsg").textContent = ""; $("settings").classList.remove("open"); };
 $("btest").onclick = async () => {
   unlock();
@@ -385,13 +537,16 @@ $("btest").onclick = async () => {
     $("tmsg").textContent = "Funcionou. Você deve estar ouvindo a voz.";
   } catch (e) { $("tmsg").textContent = "Erro. " + e.message; }
 };
-$("bclear").onclick = () => { if (busy) return; history = []; showEmpty(); };
+$("bconv").innerHTML = SV('<path d="M4 6h16M4 12h16M4 18h10"/>');
+$("bnew").innerHTML = SV('<path d="M12 5v14M5 12h14"/>');
+$("bnew").onclick = () => { if (!busy) newChat(); };
+$("bconv").onclick = () => { $("settings").classList.remove("open"); if ($("convs").classList.toggle("open")) renderList(); };
 
 async function ask(text) {
   const key = load("ultron_key", "");
   if (!key) { $("settings").classList.add("open"); add("u", text); add("a err", "Falta a chave da API do Gemini. Cole-a em Ajustes."); return; }
   busy = true;
-  history.push({ role: "user", text });
+  cur.history.push({ role: "user", text });
   add("u", text);
   const wait = add("a thinking", "");
   const stop = startThinking(wait);
@@ -403,7 +558,7 @@ async function ask(text) {
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: load("ultron_sys", DEFAULT_SYS) }] },
-        contents: history.map(h => ({ role: h.role, parts: [{ text: h.text }] })),
+        contents: cur.history.map(h => ({ role: h.role, parts: [{ text: h.text }] })),
         generationConfig: { maxOutputTokens: 1024 }
       })
     });
@@ -412,11 +567,13 @@ async function ask(text) {
     const parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
     const reply = parts.filter(p => p.text && !p.thought).map(p => p.text).join("").trim();
     if (!reply) throw new Error("O Gemini respondeu sem texto. Tente de novo.");
-    history.push({ role: "model", text: reply });
+    const entry = { role: "model", text: reply };
+    cur.history.push(entry);
+    saveConv(cur);
 
     let voiceUrl = null, voiceErr = null;
     if (load("ultron_auto", "0") === "1" && hasVoice()) {
-      try { voiceUrl = await fetchVoice(reply); } catch (e) { voiceErr = e.message; }
+      try { voiceUrl = (await makeAudio(entry, cur)).url; } catch (e) { voiceErr = e.message; }
     }
     stop();
     wait.className = "a";
@@ -425,9 +582,9 @@ async function ask(text) {
     let pending = voiceUrl ? 2 : 1;
     const fin = () => { pending--; if (pending <= 0) $("eye").classList.remove("speak"); };
     if (voiceUrl) play(voiceUrl, fin);
-    typeInto(wait, reply, () => { addEar(wait, reply, voiceUrl, voiceErr); fin(); busy = false; });
+    typeInto(wait, reply, () => { addEar(wait, entry, voiceErr); fin(); busy = false; });
   } catch (e) {
-    history.pop();
+    cur.history.pop();
     stop();
     wait.className = "a err";
     wait.textContent = "Erro. " + e.message;
